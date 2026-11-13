@@ -1800,10 +1800,10 @@
             const diffDays = Math.floor(diffHours / 24);
 
             if (diffHours < 24) {
-                return `<span class="time-badge time-today">🔥 Hoy en ${diffHours > 0 ? diffHours + 'h ' : ''}${diffMins % 60}m</span>`;
+                return `<span class="time-badge time-today">🔥 En ${diffHours > 0 ? diffHours + 'h ' : ''}${diffMins % 60}m</span>`;
             }
-            if (diffDays === 1) {
-                return `<span class="time-badge time-tomorrow">📅 Mañana</span>`;
+            if (diffHours <= 48) {
+                return `<span class="time-badge time-tomorrow">⏱️ En ${diffHours}h ${diffMins % 60}m</span>`;
             }
             return `<span class="time-badge time-future">🗓️ En ${diffDays} días</span>`;
         }
