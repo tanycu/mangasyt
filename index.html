@@ -1041,7 +1041,7 @@
             <div class="section-header">
                 <div>
                     <h2 style="font-size:1.25rem; font-weight:800;">Control de Capítulos y Episodios</h2>
-                    <p class="section-subtitle">En <strong>"Sin empezar"</strong> las fechas quedan en blanco. Al iniciar se guarda la <strong>Fecha Inicio</strong>, y al pasar a <strong>"Programado"</strong> se rellena automáticamente la <strong>Fecha Terminar</strong>.</p>
+                    <p class="section-subtitle">En <strong>"Sin empezar"</strong> las fechas quedan en blanco. Al iniciar se guarda la <strong>Fecha Inicio</strong>, y al pasar a <strong>"Programado"</strong> se rellena automáticamente la <strong>Fecha Terminado</strong>.</p>
                 </div>
                 <button class="btn btn-primary" onclick="openEpisodeModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1192,7 +1192,7 @@
 
                     <div class="info-callout">
                         <span>⚡</span>
-                        <span><strong>Automatización activa:</strong> En <em>"Sin empezar"</em> las fechas quedan vacías. Al empezar se rellena <em>Fecha Inicio</em> y al pasar a <em>"Programado"</em> se rellena automáticamente <em>Fecha Terminar</em>.</span>
+                        <span><strong>Automatización activa:</strong> En <em>"Sin empezar"</em> las fechas quedan vacías. Al empezar se rellena <em>Fecha Inicio</em>; al pasar a <em>"Programado"</em> se guarda <em>Fecha Terminado</em>, y pasará automáticamente a <em>"Publicado"</em> al llegar su <em>Fecha de Publicación en YouTube</em>.</span>
                     </div>
 
                     <div class="form-row">
@@ -1201,7 +1201,7 @@
                             <input type="datetime-local" id="ep-start">
                         </div>
                         <div class="form-group">
-                            <label for="ep-end">Fecha y Hora de Terminar</label>
+                            <label for="ep-end">Fecha y Hora de Terminado</label>
                             <input type="datetime-local" id="ep-end">
                         </div>
                     </div>
@@ -1500,8 +1500,12 @@
         function formatDisplayDate(dtStr) {
             if (!dtStr) return '';
             const parts = dtStr.split('T');
-            if (parts.length !== 2) return dtStr;
-            return `${parts[0]} ${parts[1]}`;
+            const dateParts = parts[0].split('-');
+            if (dateParts.length === 3) {
+                const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+                return parts[1] ? `${formattedDate} ${parts[1]}` : formattedDate;
+            }
+            return dtStr;
         }
 
         function formatEpisodeLabel(num) {
@@ -1528,17 +1532,39 @@
                 return '<span class="time-badge time-due">⏰ Atrasado / Hora cumplida</span>';
             }
 
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const startOfPub = new Date(pub.getFullYear(), pub.getMonth(), pub.getDate());
-            const diffDays = Math.round((startOfPub - startOfToday) / 86400000);
+            const totalMins = Math.floor(diffMs / 60000);
+            const totalHours = Math.floor(totalMins / 60);
+            const days = Math.floor(totalHours / 24);
+            const hours = totalHours % 24;
+            const mins = totalMins % 60;
 
-            if (diffDays === 0) return '<span class="time-badge time-today">🔥 ¡Hoy!</span>';
-            if (diffDays === 1) return '<span class="time-badge time-tomorrow">⚡ Mañana</span>';
-            return `<span class="time-badge time-future">📅 En ${diffDays} días</span>`;
+            if (days === 0) {
+                return `<span class="time-badge time-today">🔥 Hoy en ${hours}h ${mins}m</span>`;
+            }
+            if (days === 1) {
+                return `<span class="time-badge time-tomorrow">⏳ Mañana (${hours}h)</span>`;
+            }
+            return `<span class="time-badge time-future">📅 En ${days} días</span>`;
         }
 
         function getStatusObj(statusId) {
             return state.statuses.find(s => s.id === statusId) || state.statuses[0] || { id: 'sin_empezar', name: 'Sin empezar', color: '#94a3b8' };
+        }
+
+        function isScheduledStatus(statusId) {
+            if (!statusId) return false;
+            if (statusId === 'programado') return true;
+            const st = state.statuses.find(s => s.id === statusId);
+            return Boolean(st && st.name && st.name.trim().toLowerCase().includes('programad'));
+        }
+
+        function isValidWebUrl(url) {
+            try {
+                const parsed = new URL(url);
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch (e) {
+                return false;
+            }
         }
 
         /* ==========================================================================
@@ -1558,7 +1584,6 @@
             if (viewName === 'dashboard') renderDashboard();
             if (viewName === 'mangas') renderMangasView();
             if (viewName === 'manga-detail') renderMangaDetail();
-
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -1567,21 +1592,33 @@
            ========================================================================== */
         function renderDashboard() {
             const totalMangas = state.mangas.length;
-            let allEpisodes = [];
-            state.mangas.forEach(m => {
-                (m.episodes || []).forEach(ep => {
-                    allEpisodes.push({ ...ep, mangaId: m.id, mangaName: m.name });
+            let totalEpisodes = 0;
+            let publishedCount = 0;
+            let inProgressCount = 0;
+            const upcoming = [];
+            const countsByStatus = {};
+            state.statuses.forEach(s => { countsByStatus[s.id] = 0; });
+
+            state.mangas.forEach(manga => {
+                (manga.episodes || []).forEach(ep => {
+                    totalEpisodes++;
+                    if (countsByStatus[ep.statusId] !== undefined) {
+                        countsByStatus[ep.statusId]++;
+                    } else {
+                        countsByStatus[ep.statusId] = 1;
+                    }
+
+                    if (ep.statusId === 'publicado') {
+                        publishedCount++;
+                    } else {
+                        if (ep.statusId !== 'sin_empezar') inProgressCount++;
+                        upcoming.push({ manga, ep });
+                    }
                 });
             });
 
-            const publishedCount = allEpisodes.filter(e => e.statusId === 'publicado').length;
-            const inProgressCount = allEpisodes.filter(e => e.statusId !== 'sin_empezar' && e.statusId !== 'publicado').length;
-            const upcomingEpisodes = allEpisodes
-                .filter(e => e.statusId !== 'publicado' && e.publishDate)
-                .sort((a, b) => a.publishDate.localeCompare(b.publishDate));
-
             document.getElementById('kpi-container').innerHTML = `
-                <div class="kpi-card" style="--kpi-color:#8b5cf6;">
+                <div class="kpi-card" style="--kpi-color: #8b5cf6;">
                     <div>
                         <div class="kpi-label">Mangas Activos</div>
                         <div class="kpi-value">${totalMangas}</div>
@@ -1590,61 +1627,64 @@
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                     </div>
                 </div>
-                <div class="kpi-card" style="--kpi-color:#10b981;">
+                <div class="kpi-card" style="--kpi-color: #06b6d4;">
                     <div>
-                        <div class="kpi-label">Episodios Publicados</div>
-                        <div class="kpi-value">${publishedCount}</div>
+                        <div class="kpi-label">Total Episodios</div>
+                        <div class="kpi-value">${totalEpisodes}</div>
                     </div>
                     <div class="kpi-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
                     </div>
                 </div>
-                <div class="kpi-card" style="--kpi-color:#f59e0b;">
+                <div class="kpi-card" style="--kpi-color: #f59e0b;">
                     <div>
-                        <div class="kpi-label">En Producción</div>
+                        <div class="kpi-label">En Producción / Programados</div>
                         <div class="kpi-value">${inProgressCount}</div>
                     </div>
                     <div class="kpi-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                     </div>
                 </div>
-                <div class="kpi-card" style="--kpi-color:#06b6d4;">
+                <div class="kpi-card" style="--kpi-color: #10b981;">
                     <div>
-                        <div class="kpi-label">Próximos Estrenos</div>
-                        <div class="kpi-value">${upcomingEpisodes.length}</div>
+                        <div class="kpi-label">Videos Publicados</div>
+                        <div class="kpi-value">${publishedCount}</div>
                     </div>
                     <div class="kpi-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                     </div>
                 </div>
             `;
 
-            const upcomingListEl = document.getElementById('upcoming-list');
-            document.getElementById('upcoming-count-badge').textContent = `${upcomingEpisodes.length} programado(s)`;
+            upcoming.sort((a, b) => {
+                if (!a.ep.publishDate && !b.ep.publishDate) return 0;
+                if (!a.ep.publishDate) return 1;
+                if (!b.ep.publishDate) return -1;
+                return new Date(a.ep.publishDate) - new Date(b.ep.publishDate);
+            });
 
-            if (upcomingEpisodes.length === 0) {
-                upcomingListEl.innerHTML = `<div class="empty-state"><span>No hay episodios pendientes con fecha de publicación programada.</span></div>`;
+            document.getElementById('upcoming-count-badge').textContent = `${upcoming.length} pendientes`;
+            const upcomingEl = document.getElementById('upcoming-list');
+
+            if (upcoming.length === 0) {
+                upcomingEl.innerHTML = `<div class="empty-state" style="padding:28px 16px;">No hay episodios pendientes. Añade un manga y sus capítulos para ver aquí tu calendario de estrenos.</div>`;
             } else {
-                upcomingListEl.innerHTML = upcomingEpisodes.slice(0, 6).map(ep => {
+                upcomingEl.innerHTML = upcoming.slice(0, 6).map(({ manga, ep }) => {
                     const st = getStatusObj(ep.statusId);
-                    const epLabel = formatEpisodeLabel(ep.number);
                     return `
-                        <div class="upcoming-item">
+                        <div class="upcoming-item" onclick="switchView('manga-detail', '${manga.id}')" style="cursor:pointer;">
                             <div class="upcoming-info">
-                                <div class="upcoming-manga">${escapeHTML(ep.mangaName)}</div>
-                                <div class="upcoming-title">${epLabel}</div>
+                                <div class="upcoming-manga">${escapeHTML(manga.name)}</div>
+                                <div class="upcoming-title">${formatEpisodeLabel(ep.number)}</div>
                                 <div class="upcoming-meta">
-                                    ${getCountdownBadge(ep.publishDate)}
-                                    <span>📅 ${formatDisplayDate(ep.publishDate)}</span>
                                     <span style="color:${st.color}; font-weight:700;">● ${escapeHTML(st.name)}</span>
+                                    ${ep.publishDate ? `<span>• ${formatDisplayDate(ep.publishDate)}</span>` : ''}
                                 </div>
                             </div>
-                            <div style="display:flex; gap:6px; flex-shrink:0;">
-                                <button class="btn btn-emerald" style="padding:6px 10px; font-size:0.76rem;" onclick="quickPublishEpisode('${ep.mangaId}', '${ep.id}')">
+                            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
+                                ${getCountdownBadge(ep.publishDate)}
+                                <button class="btn btn-emerald" style="padding:4px 9px; font-size:0.72rem;" onclick="event.stopPropagation(); quickMarkPublished('${manga.id}', '${ep.id}')">
                                     ✓ Publicar
-                                </button>
-                                <button class="btn" style="padding:6px 10px; font-size:0.76rem;" onclick="switchView('manga-detail', '${ep.mangaId}')">
-                                    Abrir
                                 </button>
                             </div>
                         </div>
@@ -1652,10 +1692,10 @@
                 }).join('');
             }
 
-            const totalEps = allEpisodes.length || 1;
-            document.getElementById('status-dist-list').innerHTML = state.statuses.map(st => {
-                const count = allEpisodes.filter(e => e.statusId === st.id).length;
-                const pct = allEpisodes.length > 0 ? Math.round((count / totalEps) * 100) : 0;
+            const distEl = document.getElementById('status-dist-list');
+            distEl.innerHTML = state.statuses.map(st => {
+                const count = countsByStatus[st.id] || 0;
+                const pct = totalEpisodes > 0 ? Math.round((count / totalEpisodes) * 100) : 0;
                 return `
                     <div class="status-dist-row">
                         <div class="status-dist-top">
@@ -1669,60 +1709,57 @@
                 `;
             }).join('');
 
-            document.getElementById('dashboard-manga-grid').innerHTML = renderMangaCardsHTML(state.mangas);
+            renderMangaCardsInto('dashboard-manga-grid');
         }
 
-        function renderMangaCardsHTML(mangas) {
-            if (!mangas.length) {
-                return `
-                    <div class="empty-state" style="grid-column:1/-1;">
-                        <strong style="color:var(--text-primary); font-size:1rem;">Tu estudio está limpio y listo para empezar</strong>
-                        <span>Añade tu primer manga con su imagen de cabecera, enlace de lectura online y resumen.</span>
+        function renderMangasView() {
+            renderMangaCardsInto('mangas-list-grid');
+        }
+
+        function renderMangaCardsInto(containerId) {
+            const container = document.getElementById(containerId);
+            if (!state.mangas.length) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div style="font-size:2rem;">📚</div>
+                        <h3 style="color:var(--text-primary); font-size:1.05rem;">Tu biblioteca está vacía</h3>
+                        <p style="max-width:440px; font-size:0.85rem;">Crea tu primer manga con su imagen de cabecera, enlace de lectura online y lleva el control automático de cada capítulo.</p>
                         <button class="btn btn-primary" onclick="openMangaModal()">+ Crear mi primer Manga</button>
                     </div>
                 `;
+                return;
             }
-            return mangas.map(m => {
-                const eps = m.episodes || [];
-                const total = eps.length;
-                const pub = eps.filter(e => e.statusId === 'publicado').length;
-                const pct = total > 0 ? Math.round((pub / total) * 100) : 0;
-                const nextEp = eps.find(e => e.statusId !== 'publicado');
-                const nextStatus = nextEp ? getStatusObj(nextEp.statusId) : null;
-                const readLinkHTML = m.readUrl
-                    ? `<a href="${escapeHTML(m.readUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-cyan" style="padding:4px 9px; font-size:0.74rem; flex-shrink:0;" onclick="event.stopPropagation()">📖 Leer Online ↗</a>`
-                    : '';
+
+            container.innerHTML = state.mangas.map(manga => {
+                const eps = manga.episodes || [];
+                const pubCount = eps.filter(e => e.statusId === 'publicado').length;
+                const nextEp = eps
+                    .filter(e => e.statusId !== 'publicado')
+                    .sort((a, b) => new Date(a.publishDate || '2099-01-01') - new Date(b.publishDate || '2099-01-01'))[0];
+                const fallbackBanner = createArtBannerSVG(manga.name, '#311042', '#7c3aed', '#06b6d4');
 
                 return `
-                    <article class="manga-card" onclick="switchView('manga-detail', '${m.id}')">
+                    <article class="manga-card" onclick="switchView('manga-detail', '${manga.id}')">
                         <div class="manga-card-banner">
-                            <img src="${m.banner}" alt="${escapeHTML(m.name)}" onerror="this.src='${createArtBannerSVG(m.name, '#1e1b4b', '#6366f1', '#06b6d4')}'">
+                            <img src="${manga.banner || fallbackBanner}" alt="${escapeHTML(manga.name)}" onerror="this.src='${fallbackBanner}'">
                             <div class="manga-card-overlay"></div>
-                            <span class="manga-card-badge">${pub}/${total} publicados</span>
+                            <span class="manga-card-badge">${pubCount}/${eps.length} publicados</span>
                         </div>
                         <div class="manga-card-body">
                             <div class="manga-card-title-row">
-                                <h3 class="manga-card-title">${escapeHTML(m.name)}</h3>
-                                ${readLinkHTML}
+                                <h3 class="manga-card-title">${escapeHTML(manga.name)}</h3>
                             </div>
-                            <p class="manga-card-summary">${escapeHTML(m.summary)}</p>
+                            <p class="manga-card-summary">${escapeHTML(manga.summary || 'Sin resumen disponible.')}</p>
                             <div class="manga-card-footer">
-                                <div style="display:flex; justify-content:space-between; font-size:0.76rem; color:var(--text-secondary);">
-                                    <span>Avance del manga</span>
-                                    <strong style="color:#fff;">${pct}%</strong>
-                                </div>
-                                <div class="progress-track">
-                                    <div class="progress-fill" style="width:${pct}%; background:linear-gradient(90deg, #8b5cf6, #10b981);"></div>
-                                </div>
                                 <div class="next-ep-pill">
-                                    ${nextEp
-                                        ? `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Siguiente: <strong style="color:#fff;">${formatEpisodeLabel(nextEp.number)}</strong></span>
-                                           <span style="color:${nextStatus.color}; font-weight:700; flex-shrink:0;">${escapeHTML(nextStatus.name)}</span>`
-                                        : total > 0
-                                            ? `<span style="color:#34d399; font-weight:700;">✓ Todos los episodios publicados</span>`
-                                            : `<span>Sin episodios aún</span>`
-                                    }
+                                    <span>${nextEp ? `Siguiente: ${formatEpisodeLabel(nextEp.number)}` : 'Todos los capítulos publicados'}</span>
+                                    <span style="color:var(--accent-primary); font-weight:700;">Abrir →</span>
                                 </div>
+                                ${manga.readUrl ? `
+                                    <a href="${escapeHTML(manga.readUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-cyan" style="width:100%; padding:7px 10px; font-size:0.78rem;" onclick="event.stopPropagation()">
+                                        📖 Leer Manga Online ↗
+                                    </a>
+                                ` : ''}
                             </div>
                         </div>
                     </article>
@@ -1731,12 +1768,8 @@
         }
 
         /* ==========================================================================
-           7. RENDERIZADO: MIS MANGAS & DETALLE DE MANGA
+           7. RENDERIZADO: PÁGINA DEDICADA DE MANGA
            ========================================================================== */
-        function renderMangasView() {
-            document.getElementById('mangas-list-grid').innerHTML = renderMangaCardsHTML(state.mangas);
-        }
-
         function renderMangaDetail() {
             const manga = state.mangas.find(m => m.id === selectedMangaId);
             if (!manga) {
@@ -1745,37 +1778,43 @@
             }
 
             const eps = manga.episodes || [];
-            const pub = eps.filter(e => e.statusId === 'publicado').length;
-            const inProd = eps.filter(e => e.statusId !== 'sin_empezar' && e.statusId !== 'publicado').length;
-            const readBtnHTML = manga.readUrl
-                ? `<a href="${escapeHTML(manga.readUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-cyan">📖 Leer Manga Online ↗</a>`
-                : '';
+            const pubCount = eps.filter(e => e.statusId === 'publicado').length;
+            const notStartedCount = eps.filter(e => e.statusId === 'sin_empezar').length;
+            const inWorkCount = eps.length - pubCount - notStartedCount;
+            const fallbackBanner = createArtBannerSVG(manga.name, '#311042', '#7c3aed', '#06b6d4');
 
             document.getElementById('manga-detail-hero').innerHTML = `
                 <div class="detail-banner">
-                    <img src="${manga.banner}" alt="${escapeHTML(manga.name)}" onerror="this.src='${createArtBannerSVG(manga.name, '#1e1b4b', '#6366f1', '#06b6d4')}'">
+                    <img src="${manga.banner || fallbackBanner}" alt="${escapeHTML(manga.name)}" onerror="this.src='${fallbackBanner}'">
                     <div class="detail-banner-gradient"></div>
                 </div>
                 <div class="detail-hero-content">
                     <div class="detail-title-bar">
                         <h1 class="detail-title">${escapeHTML(manga.name)}</h1>
-                        ${readBtnHTML}
+                        ${manga.readUrl ? `
+                            <a href="${escapeHTML(manga.readUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-cyan">
+                                📖 Leer Manga Online ↗
+                            </a>
+                        ` : ''}
                     </div>
-                    <p class="detail-summary">${escapeHTML(manga.summary)}</p>
+                    <p class="detail-summary">${escapeHTML(manga.summary || '')}</p>
                     <div class="detail-stats-bar">
-                        <div class="stat-chip">📚 Total capítulos: <strong>${eps.length}</strong></div>
-                        <div class="stat-chip" style="color:#34d399;">✅ Publicados: <strong>${pub}</strong></div>
-                        <div class="stat-chip" style="color:#fbbf24;">🎬 En producción: <strong>${inProd}</strong></div>
+                        <div class="stat-chip">📚 <strong>${eps.length}</strong> capítulos</div>
+                        <div class="stat-chip" style="color:#34d399;">✅ <strong>${pubCount}</strong> publicados</div>
+                        <div class="stat-chip" style="color:#22d3ee;">🎬 <strong>${inWorkCount}</strong> en progreso</div>
+                        <div class="stat-chip" style="color:#94a3b8;">⏸️ <strong>${notStartedCount}</strong> sin empezar</div>
                     </div>
                 </div>
             `;
 
             const tableContainer = document.getElementById('episodes-table-container');
-            if (!eps.length) {
+            if (eps.length === 0) {
                 tableContainer.innerHTML = `
                     <div class="empty-state">
-                        <span>Este manga aún no tiene capítulos registrados.</span>
-                        <button class="btn btn-primary" onclick="openEpisodeModal()">+ Añadir primer capítulo</button>
+                        <div style="font-size:1.8rem;">🎬</div>
+                        <h3 style="color:var(--text-primary);">Aún no has añadido capítulos para este manga</h3>
+                        <p style="font-size:0.85rem;">Añade el primer episodio para gestionar su estado y fechas de producción.</p>
+                        <button class="btn btn-primary" onclick="openEpisodeModal()">+ Añadir Primer Capítulo</button>
                     </div>
                 `;
                 return;
@@ -1789,41 +1828,47 @@
                                 <th>Capítulo</th>
                                 <th>Estado</th>
                                 <th>Fecha Inicio</th>
-                                <th>Fecha Terminar</th>
-                                <th>Fecha Publicación</th>
+                                <th>Fecha Terminado</th>
+                                <th>Publicación YouTube</th>
                                 <th style="text-align:right;">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${eps.map(ep => {
                                 const st = getStatusObj(ep.statusId);
-                                const epLabel = formatEpisodeLabel(ep.number);
-                                const optionsHTML = state.statuses.map(s =>
-                                    `<option value="${s.id}" ${s.id === ep.statusId ? 'selected' : ''}>${escapeHTML(s.name)}</option>`
+                                const isNotStarted = ep.statusId === 'sin_empezar';
+                                const optionsHtml = state.statuses.map(s =>
+                                    `<option value="${s.id}" ${s.id === ep.statusId ? 'selected' : ''} style="background:#11131c; color:${s.color};">${escapeHTML(s.name)}</option>`
                                 ).join('');
 
                                 return `
                                     <tr>
-                                        <td><strong style="color:var(--accent-secondary); font-size:0.95rem;">${epLabel}</strong></td>
+                                        <td><strong style="color:var(--accent-secondary); font-size:0.95rem;">${formatEpisodeLabel(ep.number)}</strong></td>
                                         <td>
                                             <select class="status-select" style="color:${st.color}; border-color:${st.color};" onchange="changeEpisodeStatus('${ep.id}', this.value)">
-                                                ${optionsHTML}
+                                                ${optionsHtml}
                                             </select>
                                         </td>
-                                        <td>${ep.startDate ? `<span class="date-cell">${formatDisplayDate(ep.startDate)}</span>` : '<span class="date-empty">En blanco (Sin empezar)</span>'}</td>
-                                        <td>${ep.endDate ? `<span class="date-cell">${formatDisplayDate(ep.endDate)}</span>` : '<span class="date-empty">—</span>'}</td>
-                                        <td>
-                                            ${ep.publishDate
-                                                ? `<div style="display:flex; flex-direction:column; gap:3px;">
-                                                     <span class="date-cell">${formatDisplayDate(ep.publishDate)}</span>
-                                                     ${ep.statusId !== 'publicado' ? getCountdownBadge(ep.publishDate) : ''}
-                                                   </div>`
-                                                : '<span class="date-empty">Sin programar</span>'
-                                            }
+                                        <td class="date-cell">
+                                            ${isNotStarted || !ep.startDate
+                                                ? '<span class="date-empty">—</span>'
+                                                : formatDisplayDate(ep.startDate)}
                                         </td>
-                                        <td style="text-align:right; white-space:nowrap;">
-                                            <button class="btn" style="padding:6px 10px;" onclick="openEpisodeModal('${ep.id}')" title="Editar">✏️</button>
-                                            <button class="btn btn-danger" style="padding:6px 10px;" onclick="deleteEpisode('${ep.id}')" title="Eliminar">🗑️</button>
+                                        <td class="date-cell">
+                                            ${ep.endDate
+                                                ? formatDisplayDate(ep.endDate)
+                                                : '<span class="date-empty">—</span>'}
+                                        </td>
+                                        <td class="date-cell">
+                                            ${ep.publishDate
+                                                ? `<div>${formatDisplayDate(ep.publishDate)}</div>${ep.statusId !== 'publicado' ? `<div style="margin-top:4px;">${getCountdownBadge(ep.publishDate)}</div>` : ''}`
+                                                : '<span class="date-empty">Sin programar</span>'}
+                                        </td>
+                                        <td style="text-align:right;">
+                                            <div style="display:inline-flex; gap:6px;">
+                                                <button class="btn" style="padding:6px 9px;" onclick="openEpisodeModal('${ep.id}')" title="Editar">✏️</button>
+                                                <button class="btn btn-danger" style="padding:6px 9px;" onclick="deleteEpisode('${ep.id}')" title="Eliminar">🗑️</button>
+                                            </div>
                                         </td>
                                     </tr>
                                 `;
@@ -1835,13 +1880,8 @@
         }
 
         /* ==========================================================================
-           8. AUTOMATIZACIÓN DE FECHAS Y CAMBIO DE ESTADO
+           8. AUTOMATIZACIÓN DE ESTADOS Y FECHAS
            ========================================================================== */
-        function isScheduledStatus(statusId) {
-            const st = getStatusObj(statusId);
-            return statusId === 'programado' || (st && st.name.trim().toLowerCase() === 'programado');
-        }
-
         function changeEpisodeStatus(episodeId, newStatusId) {
             const manga = state.mangas.find(m => m.id === selectedMangaId);
             if (!manga) return;
@@ -1849,29 +1889,39 @@
             if (!ep) return;
 
             const oldStatusId = ep.statusId;
-            const epLabel = formatEpisodeLabel(ep.number);
-            ep.statusId = newStatusId;
+            const nowStr = getNowDateTimeLocal();
 
             if (newStatusId === 'sin_empezar') {
+                ep.statusId = 'sin_empezar';
                 ep.startDate = '';
                 ep.endDate = '';
-                showToast(`"${epLabel}" vuelto a Sin empezar. Fechas automáticas limpiadas.`);
-            } else {
-                const nowStr = getNowDateTimeLocal();
-                if (oldStatusId === 'sin_empezar' || !ep.startDate) {
-                    ep.startDate = nowStr;
-                    showToast(`⚡ Inicio registrado (${epLabel}): ${formatDisplayDate(ep.startDate)}`);
-                }
-                if (isScheduledStatus(newStatusId)) {
-                    ep.endDate = nowStr;
-                    showToast(`🏁 Fecha de terminar registrada (${epLabel}): ${formatDisplayDate(ep.endDate)}`);
-                }
-                if (newStatusId === 'publicado') {
-                    if (!ep.endDate) ep.endDate = nowStr;
-                    if (!ep.publishDate) ep.publishDate = nowStr;
+                showToast('Estado cambiado a "Sin empezar". Fechas limpiadas.');
+            } else if (isScheduledStatus(newStatusId)) {
+                ep.statusId = newStatusId;
+                if (!ep.startDate) ep.startDate = nowStr;
+                if (!ep.endDate) ep.endDate = nowStr;
+                const pubDate = ep.publishDate ? new Date(ep.publishDate) : null;
+                if (pubDate && !isNaN(pubDate.getTime()) && pubDate <= new Date()) {
+                    ep.statusId = 'publicado';
                     if (oldStatusId !== 'publicado') {
                         triggerPublishedNotification(manga, ep);
                     }
+                } else {
+                    showToast('Estado "Programado": Fecha Terminado guardada. Se publicará al llegar la fecha de YouTube.');
+                }
+            } else if (newStatusId === 'publicado') {
+                ep.statusId = 'publicado';
+                if (!ep.startDate) ep.startDate = nowStr;
+                if (!ep.endDate) ep.endDate = nowStr;
+                if (!ep.publishDate) ep.publishDate = nowStr;
+                if (oldStatusId !== 'publicado') {
+                    triggerPublishedNotification(manga, ep);
+                }
+            } else {
+                ep.statusId = newStatusId;
+                if (oldStatusId === 'sin_empezar' || !ep.startDate) {
+                    ep.startDate = nowStr;
+                    showToast('Fecha de inicio registrada automáticamente.');
                 }
             }
 
@@ -1879,100 +1929,67 @@
             renderMangaDetail();
         }
 
-        function handleModalStatusChange(newStatusId) {
-            const startInput = document.getElementById('ep-start');
-            const endInput = document.getElementById('ep-end');
-            const pubInput = document.getElementById('ep-publish');
-
-            if (newStatusId === 'sin_empezar') {
-                startInput.value = '';
-                endInput.value = '';
-            } else {
-                const nowStr = getNowDateTimeLocal();
-                if (!startInput.value) startInput.value = nowStr;
-                if (isScheduledStatus(newStatusId)) {
-                    endInput.value = nowStr;
-                }
-                if (newStatusId === 'publicado') {
-                    if (!endInput.value) endInput.value = nowStr;
-                    if (!pubInput.value) pubInput.value = nowStr;
-                }
-            }
-        }
-
-        function quickPublishEpisode(mangaId, episodeId) {
+        function quickMarkPublished(mangaId, episodeId) {
             const manga = state.mangas.find(m => m.id === mangaId);
             if (!manga) return;
             const ep = manga.episodes.find(e => e.id === episodeId);
             if (!ep) return;
-
             const nowStr = getNowDateTimeLocal();
             ep.statusId = 'publicado';
             if (!ep.startDate) ep.startDate = nowStr;
             if (!ep.endDate) ep.endDate = nowStr;
             if (!ep.publishDate) ep.publishDate = nowStr;
-
             triggerPublishedNotification(manga, ep);
             saveState();
-            if (currentView === 'dashboard') renderDashboard();
-            if (currentView === 'manga-detail') renderMangaDetail();
+            renderDashboard();
         }
 
         /* ==========================================================================
-           9. CRUD DE MANGAS, EPISODIOS Y ESTADOS
+           9. CRUD DE MANGAS Y EPISODIOS
            ========================================================================== */
-        function openMangaModal(mangaToEdit = null) {
-            document.getElementById('manga-id').value = mangaToEdit ? mangaToEdit.id : '';
-            document.getElementById('manga-name').value = mangaToEdit ? mangaToEdit.name : '';
-            document.getElementById('manga-read-url').value = mangaToEdit ? (mangaToEdit.readUrl || '') : '';
-            document.getElementById('manga-summary').value = mangaToEdit ? mangaToEdit.summary : '';
-            document.getElementById('manga-banner-url').value = (mangaToEdit && !mangaToEdit.banner.startsWith('data:')) ? mangaToEdit.banner : '';
-            document.getElementById('modal-manga-title').textContent = mangaToEdit ? 'Editar Manga' : 'Nuevo Manga';
+        function openMangaModal(mangaId = null) {
+            const form = document.getElementById('form-manga');
+            form.reset();
+            document.getElementById('manga-id').value = '';
 
-            currentBannerData = mangaToEdit
-                ? mangaToEdit.banner
-                : createArtBannerSVG('Nuevo Manga', '#311042', '#7c3aed', '#06b6d4');
+            if (mangaId) {
+                const manga = state.mangas.find(m => m.id === mangaId);
+                if (!manga) return;
+                document.getElementById('modal-manga-title').textContent = 'Editar Manga';
+                document.getElementById('manga-id').value = manga.id;
+                document.getElementById('manga-name').value = manga.name;
+                document.getElementById('manga-read-url').value = manga.readUrl || '';
+                document.getElementById('manga-summary').value = manga.summary || '';
+                currentBannerData = manga.banner || createArtBannerSVG(manga.name, '#311042', '#7c3aed', '#06b6d4');
+                document.getElementById('manga-banner-url').value = currentBannerData.startsWith('http') ? currentBannerData : '';
+            } else {
+                document.getElementById('modal-manga-title').textContent = 'Nuevo Manga';
+                applyRandomGradientBanner(false);
+            }
+
             document.getElementById('manga-banner-preview').src = currentBannerData;
-
             document.getElementById('modal-manga').classList.remove('hidden');
         }
 
         function editCurrentManga() {
-            const manga = state.mangas.find(m => m.id === selectedMangaId);
-            if (manga) openMangaModal(manga);
+            if (selectedMangaId) openMangaModal(selectedMangaId);
         }
 
-        function openDeleteMangaModal() {
-            const manga = state.mangas.find(m => m.id === selectedMangaId);
-            if (!manga) return;
-            document.getElementById('delete-manga-text').innerHTML = `¿Seguro que deseas eliminar <strong>${escapeHTML(manga.name)}</strong> y todos sus capítulos?`;
-            document.getElementById('modal-delete-manga').classList.remove('hidden');
-        }
-
-        function confirmDeleteCurrentManga() {
-            const idx = state.mangas.findIndex(m => m.id === selectedMangaId);
-            if (idx !== -1) {
-                const name = state.mangas[idx].name;
-                state.mangas.splice(idx, 1);
-                saveState();
-                showToast(`Manga "${name}" eliminado.`);
+        function applyRandomGradientBanner(updateDom = true) {
+            const title = document.getElementById('manga-name').value.trim() || 'MANGA';
+            const palette = BANNER_PALETTES[Math.floor(Math.random() * BANNER_PALETTES.length)];
+            currentBannerData = createArtBannerSVG(title, palette[0], palette[1], palette[2]);
+            if (updateDom) {
+                document.getElementById('manga-banner-url').value = '';
+                document.getElementById('manga-banner-preview').src = currentBannerData;
             }
-            closeModal('modal-delete-manga');
-            switchView('mangas');
-        }
-
-        function applyRandomGradientBanner() {
-            const name = document.getElementById('manga-name').value || 'MANGA';
-            const pal = BANNER_PALETTES[Math.floor(Math.random() * BANNER_PALETTES.length)];
-            currentBannerData = createArtBannerSVG(name, pal[0], pal[1], pal[2]);
-            document.getElementById('manga-banner-url').value = '';
-            document.getElementById('manga-banner-preview').src = currentBannerData;
         }
 
         function previewBannerUrl(url) {
-            if (url && url.trim().startsWith('http')) {
-                currentBannerData = url.trim();
-                document.getElementById('manga-banner-preview').src = currentBannerData;
+            const clean = url.trim();
+            if (clean) {
+                currentBannerData = clean;
+                document.getElementById('manga-banner-preview').src = clean;
             }
         }
 
@@ -1984,15 +2001,15 @@
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
-                    const maxW = 600;
-                    const scale = img.width > maxW ? maxW / img.width : 1;
-                    canvas.width = Math.round(img.width * scale);
-                    canvas.height = Math.round(img.height * scale);
+                    const maxW = 900;
+                    const scale = Math.min(1, maxW / img.width);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    currentBannerData = canvas.toDataURL('image/jpeg', 0.75);
-                    document.getElementById('manga-banner-preview').src = currentBannerData;
+                    currentBannerData = canvas.toDataURL('image/jpeg', 0.8);
                     document.getElementById('manga-banner-url').value = '';
+                    document.getElementById('manga-banner-preview').src = currentBannerData;
                 };
                 img.src = e.target.result;
             };
@@ -2005,21 +2022,18 @@
             const name = document.getElementById('manga-name').value.trim();
             const readUrl = document.getElementById('manga-read-url').value.trim();
             const summary = document.getElementById('manga-summary').value.trim();
-            const urlVal = document.getElementById('manga-banner-url').value.trim();
+            const banner = currentBannerData || createArtBannerSVG(name, '#311042', '#7c3aed', '#06b6d4');
 
-            if (!readUrl) {
-                showToast('⚠️ Debes añadir el enlace web donde leer el manga.');
+            if (!name) {
+                showToast('⚠️ Introduce el nombre del manga.');
                 return;
             }
 
-            try {
-                new URL(readUrl);
-            } catch (e) {
-                showToast('⚠️ Introduce un enlace web válido (ej. https://...).');
+            if (!readUrl || !isValidWebUrl(readUrl)) {
+                showToast('⚠️ Debes introducir un enlace web válido donde leer el manga (https://...).');
+                document.getElementById('manga-read-url').focus();
                 return;
             }
-
-            let banner = urlVal || currentBannerData || createArtBannerSVG(name, '#311042', '#7c3aed', '#06b6d4');
 
             if (id) {
                 const manga = state.mangas.find(m => m.id === id);
@@ -2028,8 +2042,8 @@
                     manga.readUrl = readUrl;
                     manga.summary = summary;
                     manga.banner = banner;
-                    showToast(`Manga "${name}" actualizado.`);
                 }
+                showToast('Manga actualizado.');
             } else {
                 const newManga = {
                     id: 'm_' + Date.now(),
@@ -2039,25 +2053,40 @@
                     banner,
                     episodes: []
                 };
-                state.mangas.push(newManga);
-                showToast(`Manga "${name}" creado.`);
+                state.mangas.unshift(newManga);
+                selectedMangaId = newManga.id;
+                showToast('Manga añadido.');
             }
 
             saveState();
             closeModal('modal-manga');
-            if (currentView === 'dashboard') renderDashboard();
-            if (currentView === 'mangas') renderMangasView();
             if (currentView === 'manga-detail') renderMangaDetail();
+            else if (currentView === 'mangas') renderMangasView();
+            else renderDashboard();
+        }
+
+        function openDeleteMangaModal() {
+            const manga = state.mangas.find(m => m.id === selectedMangaId);
+            if (!manga) return;
+            document.getElementById('delete-manga-text').textContent = `¿Estás seguro de eliminar "${manga.name}" y todos sus ${manga.episodes.length} capítulos?`;
+            document.getElementById('modal-delete-manga').classList.remove('hidden');
+        }
+
+        function confirmDeleteCurrentManga() {
+            state.mangas = state.mangas.filter(m => m.id !== selectedMangaId);
+            selectedMangaId = null;
+            saveState();
+            closeModal('modal-delete-manga');
+            showToast('Manga eliminado.');
+            switchView('mangas');
         }
 
         function getNextEpisodeNumber(manga) {
-            const eps = (manga && manga.episodes) || [];
-            if (!eps.length) return 1;
-            let maxNum = 0;
-            eps.forEach(e => {
-                const parsed = parseInt(String(e.number || '').replace(/[^0-9]/g, ''), 10);
-                if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
-            });
+            if (!manga || !Array.isArray(manga.episodes) || manga.episodes.length === 0) return 1;
+            const maxNum = manga.episodes.reduce((max, ep) => {
+                const n = parseInt(String(ep.number || '').replace(/[^0-9]/g, ''), 10);
+                return !isNaN(n) && n > max ? n : max;
+            }, 0);
             return maxNum + 1;
         }
 
@@ -2070,18 +2099,53 @@
                 `<option value="${s.id}">${escapeHTML(s.name)}</option>`
             ).join('');
 
-            const ep = episodeId ? manga.episodes.find(e => e.id === episodeId) : null;
-            const parsedNum = ep ? String(ep.number || '').replace(/[^0-9]/g, '') : String(getNextEpisodeNumber(manga));
+            document.getElementById('form-episode').reset();
+            document.getElementById('episode-id').value = '';
 
-            document.getElementById('modal-episode-title').textContent = ep ? `Editar Capítulo ${parsedNum}` : 'Añadir Capítulo';
-            document.getElementById('episode-id').value = ep ? ep.id : '';
-            document.getElementById('ep-number').value = parsedNum;
-            statusSelect.value = ep ? ep.statusId : 'sin_empezar';
-            document.getElementById('ep-start').value = (ep && ep.statusId !== 'sin_empezar') ? (ep.startDate || '') : '';
-            document.getElementById('ep-end').value = (ep && ep.statusId !== 'sin_empezar') ? (ep.endDate || '') : '';
-            document.getElementById('ep-publish').value = ep ? (ep.publishDate || '') : '';
+            if (episodeId) {
+                const ep = manga.episodes.find(e => e.id === episodeId);
+                if (!ep) return;
+                document.getElementById('modal-episode-title').textContent = 'Editar Capítulo';
+                document.getElementById('episode-id').value = ep.id;
+                document.getElementById('ep-number').value = String(ep.number || '').replace(/[^0-9]/g, '');
+                document.getElementById('ep-status').value = ep.statusId;
+                document.getElementById('ep-start').value = ep.statusId === 'sin_empezar' ? '' : (ep.startDate || '');
+                document.getElementById('ep-end').value = ep.endDate || '';
+                document.getElementById('ep-publish').value = ep.publishDate || '';
+            } else {
+                document.getElementById('modal-episode-title').textContent = 'Añadir Capítulo';
+                document.getElementById('ep-number').value = getNextEpisodeNumber(manga);
+                document.getElementById('ep-status').value = 'sin_empezar';
+                document.getElementById('ep-start').value = '';
+                document.getElementById('ep-end').value = '';
+            }
 
             document.getElementById('modal-episode').classList.remove('hidden');
+        }
+
+        function handleModalStatusChange(newStatus) {
+            const startInput = document.getElementById('ep-start');
+            const endInput = document.getElementById('ep-end');
+            const nowStr = getNowDateTimeLocal();
+
+            if (newStatus === 'sin_empezar') {
+                startInput.value = '';
+                endInput.value = '';
+            } else if (isScheduledStatus(newStatus)) {
+                if (!startInput.value) startInput.value = nowStr;
+                if (!endInput.value) endInput.value = nowStr;
+                const pubVal = document.getElementById('ep-publish').value;
+                const pubDate = pubVal ? new Date(pubVal) : null;
+                if (pubDate && !isNaN(pubDate.getTime()) && pubDate <= new Date()) {
+                    document.getElementById('ep-status').value = 'publicado';
+                    showToast('Fecha de publicación en YouTube cumplida → Estado cambiado a "Publicado".');
+                }
+            } else {
+                if (!startInput.value) startInput.value = nowStr;
+                if (newStatus === 'publicado' && !endInput.value) {
+                    endInput.value = nowStr;
+                }
+            }
         }
 
         function saveEpisode(event) {
@@ -2090,27 +2154,32 @@
             if (!manga) return;
 
             const epId = document.getElementById('episode-id').value;
-            const rawNumber = document.getElementById('ep-number').value.trim();
-
-            if (!/^[1-9][0-9]*$/.test(rawNumber)) {
-                showToast('⚠️ El número de capítulo debe ser un número entero positivo (1, 2, 3...).');
-                return;
-            }
-
-            const number = parseInt(rawNumber, 10);
-            const statusId = document.getElementById('ep-status').value;
+            const rawNum = document.getElementById('ep-number').value.trim().replace(/[^0-9]/g, '');
+            const number = rawNum ? parseInt(rawNum, 10) : NaN;
+            let statusId = document.getElementById('ep-status').value;
             let startDate = document.getElementById('ep-start').value;
             let endDate = document.getElementById('ep-end').value;
             let publishDate = document.getElementById('ep-publish').value;
             const nowStr = getNowDateTimeLocal();
 
+            if (isNaN(number) || number < 1) {
+                showToast('⚠️ El número de capítulo debe ser un número válido (1 o mayor).');
+                document.getElementById('ep-number').focus();
+                return;
+            }
+
             if (statusId === 'sin_empezar') {
                 startDate = '';
                 endDate = '';
-            } else {
-                if (!startDate) startDate = nowStr;
-                if (isScheduledStatus(statusId) && !endDate) {
-                    endDate = nowStr;
+            } else if (!startDate) {
+                startDate = nowStr;
+            }
+
+            if (isScheduledStatus(statusId)) {
+                if (!endDate) endDate = nowStr;
+                const pubDate = publishDate ? new Date(publishDate) : null;
+                if (pubDate && !isNaN(pubDate.getTime()) && pubDate <= new Date()) {
+                    statusId = 'publicado';
                 }
             }
 
@@ -2384,12 +2453,14 @@
 
             state.mangas.forEach(manga => {
                 (manga.episodes || []).forEach(ep => {
-                    if (ep.statusId === 'publicado' || !ep.publishDate) return;
+                    if (ep.statusId === 'publicado') return;
+
+                    if (!ep.publishDate) return;
                     const pubDate = new Date(ep.publishDate);
                     if (isNaN(pubDate.getTime())) return;
 
                     if (pubDate <= now) {
-                        if (state.autoPublish) {
+                        if (isScheduledStatus(ep.statusId) || state.autoPublish) {
                             ep.statusId = 'publicado';
                             if (!ep.startDate) ep.startDate = getNowDateTimeLocal();
                             if (!ep.endDate) ep.endDate = getNowDateTimeLocal();
