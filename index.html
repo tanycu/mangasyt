@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MangaTube Studio v2.2 | Control de Resúmenes & Sincronización Cloud</title>
+    <title>Tanycu YT v0.1</title>
     <style>
         :root {
             --bg-base: #08090d;
@@ -80,15 +80,43 @@
         }
 
         .brand-logo {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 25%, #38bdf8, #3b82f6 55%, #6366f1);
+            border: 2px solid #f97316;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+            box-shadow: 0 4px 16px rgba(249, 115, 22, 0.38);
             flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .brand-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .brand-logo-edit {
+            position: absolute;
+            inset: 0;
+            background: rgba(8, 9, 13, 0.72);
+            color: #fff;
+            font-size: 0.62rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .brand-logo:hover .brand-logo-edit {
+            opacity: 1;
         }
 
         .brand-title-row {
@@ -674,6 +702,7 @@
         label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
 
         input[type="text"],
+        input[type="number"],
         input[type="email"],
         input[type="password"],
         input[type="url"],
@@ -823,17 +852,16 @@
     <header class="topbar">
         <div class="topbar-inner">
             <div class="brand" onclick="switchView('dashboard')">
-                <div class="brand-logo">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
+                <div class="brand-logo" onclick="event.stopPropagation(); document.getElementById('brand-logo-input').click();" title="Haz clic para cargar tu archivo Logo Trans.jpg">
+                    <img id="brand-logo-img" src="./Logo Trans.jpg" alt="Tanycu YT Logo" onerror="this.onerror=null; this.src=getDefaultTanycuLogoSVG();">
+                    <span class="brand-logo-edit">📷 Logo</span>
+                    <input type="file" id="brand-logo-input" accept="image/*" onchange="handleBrandLogoUpload(event)" style="display:none;">
                 </div>
                 <div>
                     <div class="brand-title-row">
-                        <span class="brand-title">MangaTube Studio</span>
-                        <span class="version-pill">v2.2</span>
+                        <span class="brand-title">Tanycu YT</span>
+                        <span class="version-pill">v0.1</span>
                     </div>
-                    <span class="brand-sub">Control de Resúmenes & Cloud Sync</span>
                 </div>
             </div>
 
@@ -1013,7 +1041,7 @@
             <div class="section-header">
                 <div>
                     <h2 style="font-size:1.25rem; font-weight:800;">Control de Capítulos y Episodios</h2>
-                    <p class="section-subtitle">Mientras el estado sea <strong>"Sin empezar"</strong>, la fecha de inicio queda en blanco. Al cambiarlo, se guarda la fecha y hora actual automáticamente.</p>
+                    <p class="section-subtitle">En <strong>"Sin empezar"</strong> las fechas quedan en blanco. Al iniciar se guarda la <strong>Fecha Inicio</strong>, y al pasar a <strong>"Programado"</strong> se rellena automáticamente la <strong>Fecha Terminar</strong>.</p>
                 </div>
                 <button class="btn btn-primary" onclick="openEpisodeModal()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1140,7 +1168,7 @@
         </div>
     </div>
 
-    <!-- MODAL: CREAR / EDITAR EPISODIO -->
+    <!-- MODAL: CREAR / EDITAR EPISODIO (SOLO NÚMERO + AUTOMATIZACIÓN PROGRAMADO) -->
     <div id="modal-episode" class="modal-backdrop hidden" onclick="closeModal('modal-episode')">
         <div class="modal-box" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -1153,8 +1181,8 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="ep-number">Número de Capítulos *</label>
-                            <input type="text" id="ep-number" required placeholder="Ej. Cap. 1 - 15">
+                            <label for="ep-number">Número de Capítulo *</label>
+                            <input type="number" id="ep-number" min="1" step="1" required placeholder="Ej. 1" oninput="this.value = this.value.replace(/[^0-9]/g, '')" onkeydown="if(['e','E','+','-','.',','].includes(event.key)) event.preventDefault();">
                         </div>
                         <div class="form-group">
                             <label for="ep-status">Estado Actual *</label>
@@ -1162,14 +1190,9 @@
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="ep-title">Título del Video / Resumen *</label>
-                        <input type="text" id="ep-title" required placeholder="Ej. El arco inicial que lo cambia todo">
-                    </div>
-
                     <div class="info-callout">
                         <span>⚡</span>
-                        <span><strong>Automatización activa:</strong> Si el estado es <em>"Sin empezar"</em>, la fecha de inicio queda en blanco. Al cambiarlo a cualquier otro estado, registra automáticamente la fecha y hora exacta de hoy.</span>
+                        <span><strong>Automatización activa:</strong> En <em>"Sin empezar"</em> las fechas quedan vacías. Al empezar se rellena <em>Fecha Inicio</em> y al pasar a <em>"Programado"</em> se rellena automáticamente <em>Fecha Terminar</em>.</span>
                     </div>
 
                     <div class="form-row">
@@ -1184,7 +1207,7 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="ep-publish">Fecha y Hora de Publicación (YouTube)</label>
+                        <label for="ep-publish">Fecha Programada de Publicación (YouTube)</label>
                         <input type="datetime-local" id="ep-publish">
                     </div>
                 </div>
@@ -1205,7 +1228,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size:0.82rem; color:var(--text-secondary);">
-                    Crea, reordena o elimina tus propias fases de trabajo. <strong>Sin empezar</strong> y <strong>Publicado</strong> se mantienen como estados base para las automatizaciones.
+                    Crea, edita el nombre o color, reordena o elimina tus fases de trabajo. <strong>Sin empezar</strong> y <strong>Publicado</strong> conservan su lógica automática aunque cambies su nombre o color.
                 </p>
 
                 <form onsubmit="addCustomStatus(event)" style="display:flex; gap:8px;">
@@ -1267,7 +1290,8 @@
            1. ALMACENAMIENTO HÍBRIDO SEGURO
            ========================================================================== */
         window.__memoryStorage = window.__memoryStorage || {};
-        const STORAGE_KEY = 'mangatube_studio_v22';
+        const STORAGE_KEY = 'mangatube_studio_v2';
+        const BRAND_LOGO_KEY = 'tanycu_yt_brand_logo';
 
         const SafeStorage = {
             get(key) {
@@ -1322,6 +1346,63 @@
             ['#1f2937', '#0f766e', '#84cc16']
         ];
 
+        function getDefaultTanycuLogoSVG() {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+                <defs>
+                    <radialGradient id="bg" cx="35%" cy="25%" r="75%">
+                        <stop offset="0%" stop-color="#38bdf8"/>
+                        <stop offset="60%" stop-color="#3b82f6"/>
+                        <stop offset="100%" stop-color="#6366f1"/>
+                    </radialGradient>
+                </defs>
+                <circle cx="60" cy="60" r="56" fill="url(#bg)" stroke="#f97316" stroke-width="6"/>
+                <circle cx="60" cy="66" r="24" fill="#fde6d8"/>
+                <path d="M32 58 C30 30, 90 30, 88 58 C84 44, 72 42, 60 46 C48 42, 36 44, 32 58 Z" fill="#ea580c"/>
+                <path d="M36 48 L48 26 L58 40 L68 24 L76 42 L86 34 L84 54 Z" fill="#f97316"/>
+                <circle cx="51" cy="66" r="4" fill="#78350f"/>
+                <circle cx="69" cy="66" r="4" fill="#78350f"/>
+                <circle cx="50" cy="65" r="1.5" fill="#fbbf24"/>
+                <circle cx="68" cy="65" r="1.5" fill="#fbbf24"/>
+                <path d="M55 75 Q60 80 65 75" fill="none" stroke="#9a3412" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M36 106 C38 88, 82 88, 84 106 Z" fill="#fef3c7"/>
+            </svg>`;
+            return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+        }
+
+        function initBrandLogo() {
+            const imgEl = document.getElementById('brand-logo-img');
+            if (!imgEl) return;
+            const savedLogo = SafeStorage.get(BRAND_LOGO_KEY);
+            if (savedLogo) {
+                imgEl.src = savedLogo;
+            }
+        }
+
+        function handleBrandLogoUpload(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const size = 180;
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, size, size);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    SafeStorage.set(BRAND_LOGO_KEY, dataUrl);
+                    const imgEl = document.getElementById('brand-logo-img');
+                    if (imgEl) imgEl.src = dataUrl;
+                    showToast('✅ Logo de Tanycu YT actualizado.');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
         /* ==========================================================================
            3. ESTADO INICIAL LIMPIO
            ========================================================================== */
@@ -1329,9 +1410,9 @@
             return {
                 statuses: [
                     { id: 'sin_empezar', name: 'Sin empezar', color: '#94a3b8', locked: true },
-                    { id: 'guion', name: 'Guion', color: '#f59e0b', locked: false },
-                    { id: 'grabando', name: 'Grabando Audio', color: '#06b6d4', locked: false },
-                    { id: 'editando', name: 'Editando Video', color: '#8b5cf6', locked: false },
+                    { id: 'guion', name: 'En guion', color: '#f59e0b', locked: false },
+                    { id: 'grabando', name: 'Grabando', color: '#06b6d4', locked: false },
+                    { id: 'editando', name: 'Editando', color: '#8b5cf6', locked: false },
                     { id: 'programado', name: 'Programado', color: '#ec4899', locked: false },
                     { id: 'publicado', name: 'Publicado', color: '#10b981', locked: true }
                 ],
@@ -1360,7 +1441,7 @@
         };
 
         function loadLocalState() {
-            const raw = SafeStorage.get(STORAGE_KEY) || SafeStorage.get('mangatube_studio_clean_v1');
+            const raw = SafeStorage.get(STORAGE_KEY) || SafeStorage.get('mangatube_studio_v22') || SafeStorage.get('mangatube_studio_clean_v1');
             if (raw) {
                 try {
                     const parsed = JSON.parse(raw);
@@ -1421,6 +1502,11 @@
             const parts = dtStr.split('T');
             if (parts.length !== 2) return dtStr;
             return `${parts[0]} ${parts[1]}`;
+        }
+
+        function formatEpisodeLabel(num) {
+            const clean = String(num || '').replace(/[^0-9]/g, '');
+            return clean ? `Capítulo ${clean}` : `Capítulo ${escapeHTML(num)}`;
         }
 
         function escapeHTML(str) {
@@ -1541,11 +1627,12 @@
             } else {
                 upcomingListEl.innerHTML = upcomingEpisodes.slice(0, 6).map(ep => {
                     const st = getStatusObj(ep.statusId);
+                    const epLabel = formatEpisodeLabel(ep.number);
                     return `
                         <div class="upcoming-item">
                             <div class="upcoming-info">
-                                <div class="upcoming-manga">${escapeHTML(ep.mangaName)} • ${escapeHTML(ep.number)}</div>
-                                <div class="upcoming-title">${escapeHTML(ep.title)}</div>
+                                <div class="upcoming-manga">${escapeHTML(ep.mangaName)}</div>
+                                <div class="upcoming-title">${epLabel}</div>
                                 <div class="upcoming-meta">
                                     ${getCountdownBadge(ep.publishDate)}
                                     <span>📅 ${formatDisplayDate(ep.publishDate)}</span>
@@ -1629,7 +1716,7 @@
                                 </div>
                                 <div class="next-ep-pill">
                                     ${nextEp
-                                        ? `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Siguiente: <strong style="color:#fff;">${escapeHTML(nextEp.number)}</strong></span>
+                                        ? `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Siguiente: <strong style="color:#fff;">${formatEpisodeLabel(nextEp.number)}</strong></span>
                                            <span style="color:${nextStatus.color}; font-weight:700; flex-shrink:0;">${escapeHTML(nextStatus.name)}</span>`
                                         : total > 0
                                             ? `<span style="color:#34d399; font-weight:700;">✓ Todos los episodios publicados</span>`
@@ -1699,8 +1786,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Capítulos</th>
-                                <th>Título del Video / Resumen</th>
+                                <th>Capítulo</th>
                                 <th>Estado</th>
                                 <th>Fecha Inicio</th>
                                 <th>Fecha Terminar</th>
@@ -1711,14 +1797,14 @@
                         <tbody>
                             ${eps.map(ep => {
                                 const st = getStatusObj(ep.statusId);
+                                const epLabel = formatEpisodeLabel(ep.number);
                                 const optionsHTML = state.statuses.map(s =>
                                     `<option value="${s.id}" ${s.id === ep.statusId ? 'selected' : ''}>${escapeHTML(s.name)}</option>`
                                 ).join('');
 
                                 return `
                                     <tr>
-                                        <td><strong style="color:var(--accent-secondary);">${escapeHTML(ep.number)}</strong></td>
-                                        <td><strong>${escapeHTML(ep.title)}</strong></td>
+                                        <td><strong style="color:var(--accent-secondary); font-size:0.95rem;">${epLabel}</strong></td>
                                         <td>
                                             <select class="status-select" style="color:${st.color}; border-color:${st.color};" onchange="changeEpisodeStatus('${ep.id}', this.value)">
                                                 ${optionsHTML}
@@ -1751,6 +1837,11 @@
         /* ==========================================================================
            8. AUTOMATIZACIÓN DE FECHAS Y CAMBIO DE ESTADO
            ========================================================================== */
+        function isScheduledStatus(statusId) {
+            const st = getStatusObj(statusId);
+            return statusId === 'programado' || (st && st.name.trim().toLowerCase() === 'programado');
+        }
+
         function changeEpisodeStatus(episodeId, newStatusId) {
             const manga = state.mangas.find(m => m.id === selectedMangaId);
             if (!manga) return;
@@ -1758,18 +1849,24 @@
             if (!ep) return;
 
             const oldStatusId = ep.statusId;
+            const epLabel = formatEpisodeLabel(ep.number);
             ep.statusId = newStatusId;
 
             if (newStatusId === 'sin_empezar') {
                 ep.startDate = '';
-                showToast(`"${ep.number}" vuelto a Sin empezar. Fecha de inicio limpiada.`);
+                ep.endDate = '';
+                showToast(`"${epLabel}" vuelto a Sin empezar. Fechas automáticas limpiadas.`);
             } else {
+                const nowStr = getNowDateTimeLocal();
                 if (oldStatusId === 'sin_empezar' || !ep.startDate) {
-                    ep.startDate = getNowDateTimeLocal();
-                    showToast(`⚡ Inicio registrado: ${formatDisplayDate(ep.startDate)}`);
+                    ep.startDate = nowStr;
+                    showToast(`⚡ Inicio registrado (${epLabel}): ${formatDisplayDate(ep.startDate)}`);
+                }
+                if (isScheduledStatus(newStatusId)) {
+                    ep.endDate = nowStr;
+                    showToast(`🏁 Fecha de terminar registrada (${epLabel}): ${formatDisplayDate(ep.endDate)}`);
                 }
                 if (newStatusId === 'publicado') {
-                    const nowStr = getNowDateTimeLocal();
                     if (!ep.endDate) ep.endDate = nowStr;
                     if (!ep.publishDate) ep.publishDate = nowStr;
                     if (oldStatusId !== 'publicado') {
@@ -1789,10 +1886,14 @@
 
             if (newStatusId === 'sin_empezar') {
                 startInput.value = '';
+                endInput.value = '';
             } else {
-                if (!startInput.value) startInput.value = getNowDateTimeLocal();
+                const nowStr = getNowDateTimeLocal();
+                if (!startInput.value) startInput.value = nowStr;
+                if (isScheduledStatus(newStatusId)) {
+                    endInput.value = nowStr;
+                }
                 if (newStatusId === 'publicado') {
-                    const nowStr = getNowDateTimeLocal();
                     if (!endInput.value) endInput.value = nowStr;
                     if (!pubInput.value) pubInput.value = nowStr;
                 }
@@ -1883,13 +1984,13 @@
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
-                    const maxW = 900;
+                    const maxW = 600;
                     const scale = img.width > maxW ? maxW / img.width : 1;
                     canvas.width = Math.round(img.width * scale);
                     canvas.height = Math.round(img.height * scale);
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    currentBannerData = canvas.toDataURL('image/jpeg', 0.78);
+                    currentBannerData = canvas.toDataURL('image/jpeg', 0.75);
                     document.getElementById('manga-banner-preview').src = currentBannerData;
                     document.getElementById('manga-banner-url').value = '';
                 };
@@ -1938,13 +2039,8 @@
                     banner,
                     episodes: []
                 };
-                state.mangas.unshift(newManga);
-                selectedMangaId = newManga.id;
+                state.mangas.push(newManga);
                 showToast(`Manga "${name}" creado.`);
-                closeModal('modal-manga');
-                saveState();
-                switchView('manga-detail', newManga.id);
-                return;
             }
 
             saveState();
@@ -1952,6 +2048,17 @@
             if (currentView === 'dashboard') renderDashboard();
             if (currentView === 'mangas') renderMangasView();
             if (currentView === 'manga-detail') renderMangaDetail();
+        }
+
+        function getNextEpisodeNumber(manga) {
+            const eps = (manga && manga.episodes) || [];
+            if (!eps.length) return 1;
+            let maxNum = 0;
+            eps.forEach(e => {
+                const parsed = parseInt(String(e.number || '').replace(/[^0-9]/g, ''), 10);
+                if (!isNaN(parsed) && parsed > maxNum) maxNum = parsed;
+            });
+            return maxNum + 1;
         }
 
         function openEpisodeModal(episodeId = null) {
@@ -1964,13 +2071,14 @@
             ).join('');
 
             const ep = episodeId ? manga.episodes.find(e => e.id === episodeId) : null;
-            document.getElementById('modal-episode-title').textContent = ep ? 'Editar Capítulo' : 'Añadir Capítulo / Episodio';
+            const parsedNum = ep ? String(ep.number || '').replace(/[^0-9]/g, '') : String(getNextEpisodeNumber(manga));
+
+            document.getElementById('modal-episode-title').textContent = ep ? `Editar Capítulo ${parsedNum}` : 'Añadir Capítulo';
             document.getElementById('episode-id').value = ep ? ep.id : '';
-            document.getElementById('ep-number').value = ep ? ep.number : '';
-            document.getElementById('ep-title').value = ep ? ep.title : '';
+            document.getElementById('ep-number').value = parsedNum;
             statusSelect.value = ep ? ep.statusId : 'sin_empezar';
             document.getElementById('ep-start').value = (ep && ep.statusId !== 'sin_empezar') ? (ep.startDate || '') : '';
-            document.getElementById('ep-end').value = ep ? (ep.endDate || '') : '';
+            document.getElementById('ep-end').value = (ep && ep.statusId !== 'sin_empezar') ? (ep.endDate || '') : '';
             document.getElementById('ep-publish').value = ep ? (ep.publishDate || '') : '';
 
             document.getElementById('modal-episode').classList.remove('hidden');
@@ -1982,21 +2090,31 @@
             if (!manga) return;
 
             const epId = document.getElementById('episode-id').value;
-            const number = document.getElementById('ep-number').value.trim();
-            const title = document.getElementById('ep-title').value.trim();
+            const rawNumber = document.getElementById('ep-number').value.trim();
+
+            if (!/^[1-9][0-9]*$/.test(rawNumber)) {
+                showToast('⚠️ El número de capítulo debe ser un número entero positivo (1, 2, 3...).');
+                return;
+            }
+
+            const number = parseInt(rawNumber, 10);
             const statusId = document.getElementById('ep-status').value;
             let startDate = document.getElementById('ep-start').value;
             let endDate = document.getElementById('ep-end').value;
             let publishDate = document.getElementById('ep-publish').value;
+            const nowStr = getNowDateTimeLocal();
 
             if (statusId === 'sin_empezar') {
                 startDate = '';
-            } else if (!startDate) {
-                startDate = getNowDateTimeLocal();
+                endDate = '';
+            } else {
+                if (!startDate) startDate = nowStr;
+                if (isScheduledStatus(statusId) && !endDate) {
+                    endDate = nowStr;
+                }
             }
 
             if (statusId === 'publicado') {
-                const nowStr = getNowDateTimeLocal();
                 if (!endDate) endDate = nowStr;
                 if (!publishDate) publishDate = nowStr;
             }
@@ -2006,7 +2124,7 @@
                 if (ep) {
                     const wasPublished = ep.statusId === 'publicado';
                     ep.number = number;
-                    ep.title = title;
+                    delete ep.title;
                     ep.statusId = statusId;
                     ep.startDate = startDate;
                     ep.endDate = endDate;
@@ -2015,14 +2133,13 @@
                     if (!wasPublished && statusId === 'publicado') {
                         triggerPublishedNotification(manga, ep);
                     } else {
-                        showToast('Capítulo actualizado.');
+                        showToast(`Capítulo ${number} actualizado.`);
                     }
                 }
             } else {
                 const newEp = {
                     id: 'ep_' + Date.now(),
                     number,
-                    title,
                     statusId,
                     startDate,
                     endDate,
@@ -2032,7 +2149,7 @@
                 if (statusId === 'publicado') {
                     triggerPublishedNotification(manga, newEp);
                 } else {
-                    showToast('Capítulo añadido.');
+                    showToast(`Capítulo ${number} añadido.`);
                 }
             }
 
@@ -2060,19 +2177,45 @@
 
         function renderStatusManagerList() {
             document.getElementById('status-manager-list').innerHTML = state.statuses.map((st, idx) => `
-                <div class="status-manager-item">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="width:14px; height:14px; border-radius:50%; background:${st.color}; display:inline-block;"></span>
-                        <strong>${escapeHTML(st.name)}</strong>
-                        ${st.locked ? '<span style="font-size:0.7rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:2px 7px; border-radius:999px;">Base</span>' : ''}
-                    </div>
-                    <div style="display:flex; gap:4px;">
-                        ${idx > 1 && !st.locked ? `<button class="btn" style="padding:3px 7px; font-size:0.75rem;" onclick="moveCustomStatus(${idx}, -1)" title="Subir">↑</button>` : ''}
-                        ${idx < state.statuses.length - 2 && !st.locked ? `<button class="btn" style="padding:3px 7px; font-size:0.75rem;" onclick="moveCustomStatus(${idx}, 1)" title="Bajar">↓</button>` : ''}
-                        ${st.locked ? '' : `<button class="btn btn-danger" style="padding:4px 9px; font-size:0.75rem;" onclick="deleteCustomStatus('${st.id}')">Eliminar</button>`}
+                <div class="status-manager-item" style="gap:8px;">
+                    <input type="color" value="${st.color}" onchange="updateStatusColor('${st.id}', this.value)" title="Cambiar color" style="width:34px; height:34px; padding:2px; border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-surface); cursor:pointer; flex-shrink:0;">
+                    <input type="text" value="${escapeHTML(st.name)}" onchange="updateStatusName('${st.id}', this.value)" onblur="updateStatusName('${st.id}', this.value)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); this.blur(); }" placeholder="Nombre del estado" style="flex:1; padding:6px 10px; font-weight:700;">
+                    ${st.locked ? '<span style="font-size:0.68rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:3px 7px; border-radius:999px; flex-shrink:0;">Base</span>' : ''}
+                    <div style="display:flex; gap:4px; flex-shrink:0;">
+                        ${idx > 1 && !st.locked ? `<button type="button" class="btn" style="padding:4px 8px; font-size:0.75rem;" onclick="moveCustomStatus(${idx}, -1)" title="Subir">↑</button>` : ''}
+                        ${idx < state.statuses.length - 2 && !st.locked ? `<button type="button" class="btn" style="padding:4px 8px; font-size:0.75rem;" onclick="moveCustomStatus(${idx}, 1)" title="Bajar">↓</button>` : ''}
+                        ${st.locked ? '' : `<button type="button" class="btn btn-danger" style="padding:4px 9px; font-size:0.75rem;" onclick="deleteCustomStatus('${st.id}')">Eliminar</button>`}
                     </div>
                 </div>
             `).join('');
+        }
+
+        function updateStatusName(statusId, rawName) {
+            const name = String(rawName || '').trim();
+            const st = state.statuses.find(s => s.id === statusId);
+            if (!st) return;
+            if (!name) {
+                renderStatusManagerList();
+                return;
+            }
+            if (st.name === name) return;
+            st.name = name;
+            saveState();
+            if (currentView === 'dashboard') renderDashboard();
+            if (currentView === 'mangas') renderMangasView();
+            if (currentView === 'manga-detail') renderMangaDetail();
+            showToast(`Estado renombrado a "${name}".`);
+        }
+
+        function updateStatusColor(statusId, newColor) {
+            const st = state.statuses.find(s => s.id === statusId);
+            if (!st || !newColor || st.color === newColor) return;
+            st.color = newColor;
+            saveState();
+            if (currentView === 'dashboard') renderDashboard();
+            if (currentView === 'mangas') renderMangasView();
+            if (currentView === 'manga-detail') renderMangaDetail();
+            showToast(`Color de "${st.name}" actualizado.`);
         }
 
         function moveCustomStatus(index, dir) {
@@ -2170,7 +2313,7 @@
                     updateNotifControlsUI();
                     if (perm === 'granted') {
                         showToast('🔔 Notificaciones del navegador activadas.');
-                        sendNativeNotification('MangaTube Studio', 'Recibirás alertas cuando se publique un video.');
+                        sendNativeNotification('Tanycu YT', 'Recibirás alertas cuando se publique un video.');
                     } else {
                         showToast('Permiso de notificaciones denegado o restringido.');
                     }
@@ -2220,15 +2363,16 @@
         }
 
         function triggerPublishedNotification(manga, ep) {
+            const epLabel = formatEpisodeLabel(ep.number);
             const title = `🎉 ¡Video Publicado! — ${manga.name}`;
-            const message = `${ep.number}: "${ep.title}" ya figura como Publicado.`;
+            const message = `${epLabel} ya figura como Publicado.`;
             pushNotification({ title, message, mangaId: manga.id, episodeId: ep.id });
-            showToast(`${title}: ${ep.number}`);
+            showToast(`${title}: ${epLabel}`);
         }
 
         function testNotification() {
             pushNotification({
-                title: '🔔 Prueba de Notificación — MangaTube Studio',
+                title: '🔔 Prueba de Notificación — Tanycu YT',
                 message: 'Así te avisaremos cuando se publique un resumen o llegue su hora programada.'
             });
             showToast('Notificación de prueba enviada.');
@@ -2253,13 +2397,14 @@
                             changed = true;
                         } else if (!state.notifiedDueIds.includes(ep.id)) {
                             state.notifiedDueIds.push(ep.id);
+                            const epLabel = formatEpisodeLabel(ep.number);
                             pushNotification({
                                 title: `⏰ Hora de estreno — ${manga.name}`,
-                                message: `El episodio ${ep.number} ("${ep.title}") ha alcanzado su fecha de publicación.`,
+                                message: `El ${epLabel} ha alcanzado su fecha de publicación.`,
                                 mangaId: manga.id,
                                 episodeId: ep.id
                             });
-                            showToast(`⏰ Hora de publicar: ${manga.name} (${ep.number})`);
+                            showToast(`⏰ Hora de publicar: ${manga.name} (${epLabel})`);
                             changed = true;
                         }
                     }
@@ -2480,7 +2625,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `mangatube-studio-${new Date().toISOString().slice(0, 10)}.json`;
+                a.download = `tanycu-yt-${new Date().toISOString().slice(0, 10)}.json`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -2551,6 +2696,7 @@
         });
 
         function initApp() {
+            initBrandLogo();
             renderNotifications();
             updateNotifControlsUI();
             renderDashboard();
