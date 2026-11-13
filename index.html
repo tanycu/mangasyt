@@ -1791,21 +1791,29 @@
             if (!publishDateStr) return '';
             const now = new Date();
             const target = new Date(publishDateStr);
-            const diffMs = target - now;
+            if (isNaN(target.getTime())) return '';
+
+            const diffMs = target.getTime() - now.getTime();
             if (diffMs <= 0) {
                 return `<span class="time-badge time-due">⏰ Atrasado / Hora cumplida</span>`;
             }
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMins / 60);
-            const diffDays = Math.floor(diffHours / 24);
 
-            if (diffHours < 24) {
-                return `<span class="time-badge time-today">🔥 En ${diffHours > 0 ? diffHours + 'h ' : ''}${diffMins % 60}m</span>`;
+            const totalMins = Math.floor(diffMs / 60000);
+            const totalHours = Math.floor(totalMins / 60);
+            const remMins = totalMins % 60;
+
+            if (totalHours < 24) {
+                return `<span class="time-badge time-today">🔥 En ${totalHours > 0 ? totalHours + 'h ' : ''}${remMins}m</span>`;
             }
-            if (diffHours <= 48) {
-                return `<span class="time-badge time-tomorrow">⏱️ En ${diffHours}h ${diffMins % 60}m</span>`;
+            if (totalHours <= 48) {
+                return `<span class="time-badge time-tomorrow">⏱️ En ${totalHours}h ${remMins}m</span>`;
             }
-            return `<span class="time-badge time-future">🗓️ En ${diffDays} días</span>`;
+
+            const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const targetMidnight = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+            const calendarDays = Math.round((targetMidnight.getTime() - todayMidnight.getTime()) / 86400000);
+
+            return `<span class="time-badge time-future">🗓️ En ${calendarDays} ${calendarDays === 1 ? 'día' : 'días'}</span>`;
         }
 
         function renderDashboard() {
