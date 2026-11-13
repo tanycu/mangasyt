@@ -14,18 +14,18 @@
     <title>Tanycu YT v0.1</title>
     <style>
         :root {
-            --bg-base: #08090d;
-            --bg-surface: #11131c;
-            --bg-surface-2: #181b28;
-            --bg-surface-3: #222638;
+            --bg-base: #0b1120;
+            --bg-surface: #111827;
+            --bg-surface-2: #1e293b;
+            --bg-surface-3: #263348;
             --border-subtle: rgba(255, 255, 255, 0.08);
             --border-strong: rgba(255, 255, 255, 0.16);
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --text-muted: #64748b;
-            --accent-primary: #8b5cf6;
+            --accent-primary: #3b82f6;
             --accent-secondary: #06b6d4;
-            --accent-rose: #f43f5e;
+            --accent-rose: #ef4444;
             --accent-emerald: #10b981;
             --accent-amber: #f59e0b;
             --radius-sm: 8px;
@@ -1167,6 +1167,21 @@
                     <p style="font-size:0.84rem; color:var(--text-secondary);">
                         Inicia sesión con tu cuenta privada para que cada cambio se guarde en <strong>Firebase Firestore</strong> y se actualice al segundo en tu PC, móvil y tablet.
                     </p>
+
+                    <details id="firebase-config-details" style="background:var(--bg-surface-2); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:10px 12px;">
+                        <summary style="cursor:pointer; font-size:0.8rem; font-weight:700; color:#22d3ee;">
+                            ⚙️ Configurar API Key / Firebase Config (mangas-44364)
+                        </summary>
+                        <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+                            <p style="font-size:0.75rem; color:var(--text-secondary);">
+                                Pega aquí tu <strong>apiKey</strong> real (<code>AIzaSy...</code>) o todo el objeto <code>firebaseConfig</code> copiado desde <em>Firebase Console → Configuración del proyecto</em>:
+                            </p>
+                            <textarea id="firebase-config-input" rows="3" placeholder='AIzaSy...  o pega { apiKey: "...", authDomain: "...", projectId: "..." }' style="font-family:monospace; font-size:0.78rem;"></textarea>
+                            <button type="button" class="btn btn-cyan" style="padding:7px 10px; font-size:0.78rem;" onclick="saveCustomFirebaseConfig()">
+                                💾 Guardar configuración de Firebase
+                            </button>
+                        </div>
+                    </details>
 
                     <div class="auth-tabs">
                         <button type="button" id="auth-tab-login" class="auth-tab active" onclick="setAuthMode('login')">Iniciar Sesión</button>
@@ -2999,7 +3014,13 @@
                 }
                 closeModal('modal-cloud');
             } catch (err) {
-                errEl.textContent = err.message || 'Error al autenticar con Firebase.';
+                if (err && (err.code === 'auth/api-key-not-valid' || String(err.message).includes('api-key-not-valid'))) {
+                    const detailsEl = document.getElementById('firebase-config-details');
+                    if (detailsEl) detailsEl.open = true;
+                    errEl.textContent = '⚠️ Falta tu API Key real de Firebase. Ábrela arriba en "⚙️ Configurar API Key" y pégala desde Firebase Console.';
+                } else {
+                    errEl.textContent = err.message || 'Error al autenticar con Firebase.';
+                }
                 errEl.style.display = 'block';
             }
         }
@@ -3013,9 +3034,61 @@
                     closeModal('modal-cloud');
                 }
             } catch (err) {
-                errEl.textContent = err.message || 'Error al iniciar sesión con Google.';
+                if (err && (err.code === 'auth/api-key-not-valid' || String(err.message).includes('api-key-not-valid'))) {
+                    const detailsEl = document.getElementById('firebase-config-details');
+                    if (detailsEl) detailsEl.open = true;
+                    errEl.textContent = '⚠️ Falta tu API Key real de Firebase. Ábrela arriba en "⚙️ Configurar API Key" y pégala desde Firebase Console.';
+                } else {
+                    errEl.textContent = err.message || 'Error al iniciar sesión con Google.';
+                }
                 errEl.style.display = 'block';
             }
+        }
+
+        function saveCustomFirebaseConfig() {
+            const raw = document.getElementById('firebase-config-input').value.trim();
+            if (!raw) {
+                showToast('⚠️ Pega primero tu API Key o el bloque firebaseConfig.');
+                return;
+            }
+            let parsed = null;
+            if (raw.startsWith('AIza')) {
+                parsed = {
+                    apiKey: raw.replace(/['",;\s]/g, ''),
+                    authDomain: "mangas-44364.firebaseapp.com",
+                    projectId: "mangas-44364",
+                    storageBucket: "mangas-44364.firebasestorage.app"
+                };
+            } else {
+                const apiKeyMatch = raw.match(/apiKey\s*:\s*["']([^"']+)["']/);
+                const authDomainMatch = raw.match(/authDomain\s*:\s*["']([^"']+)["']/);
+                const projectIdMatch = raw.match(/projectId\s*:\s*["']([^"']+)["']/);
+                const storageBucketMatch = raw.match(/storageBucket\s*:\s*["']([^"']+)["']/);
+                const messagingSenderIdMatch = raw.match(/messagingSenderId\s*:\s*["']([^"']+)["']/);
+                const appIdMatch = raw.match(/appId\s*:\s*["']([^"']+)["']/);
+                if (apiKeyMatch) {
+                    parsed = {
+                        apiKey: apiKeyMatch[1],
+                        authDomain: authDomainMatch ? authDomainMatch[1] : "mangas-44364.firebaseapp.com",
+                        projectId: projectIdMatch ? projectIdMatch[1] : "mangas-44364",
+                        storageBucket: storageBucketMatch ? storageBucketMatch[1] : "mangas-44364.firebasestorage.app",
+                        ...(messagingSenderIdMatch ? { messagingSenderId: messagingSenderIdMatch[1] } : {}),
+                        ...(appIdMatch ? { appId: appIdMatch[1] } : {})
+                    };
+                }
+            }
+
+            if (!parsed || !parsed.apiKey) {
+                showToast('⚠️ No se encontró una apiKey válida (debe empezar por AIza...).');
+                return;
+            }
+
+            SafeStorage.set('tanycu_yt_firebase_cfg', JSON.stringify(parsed));
+            if (typeof window.initFirebaseAppWithConfig === 'function') {
+                window.initFirebaseAppWithConfig(parsed);
+            }
+            document.getElementById('auth-error-msg').style.display = 'none';
+            showToast('✅ Configuración de Firebase guardada. Ya puedes iniciar sesión.');
         }
 
         async function handleSignOut() {
@@ -3160,7 +3233,7 @@
          16. MÓDULO DE CONEXIÓN EN TIEMPO REAL CON FIREBASE (AUTH + FIRESTORE)
          ========================================================================== -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import {
             getAuth,
             onAuthStateChanged,
@@ -3177,74 +3250,95 @@
             onSnapshot
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyD4kQ1b2c3d4e5f6g7h8i9j0k1l2m3n4o5",
+        const DEFAULT_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyAPvPg-lTi6nfHitoq-Yu792d9ToIwODrg",
             authDomain: "mangas-44364.firebaseapp.com",
             projectId: "mangas-44364",
             storageBucket: "mangas-44364.firebasestorage.app",
-            messagingSenderId: "847291046382",
-            appId: "1:847291046382:web:9f8e7d6c5b4a3210fedcba"
+            messagingSenderId: "574674024716",
+            appId: "1:574674024716:web:cb2034c392791e092cb129"
         };
 
+        let unsubscribeDoc = null;
+        let unsubscribeAuth = null;
+        let isApplyingRemote = false;
+
+        window.initFirebaseAppWithConfig = async function(cfg) {
+            try {
+                if (unsubscribeDoc) { unsubscribeDoc(); unsubscribeDoc = null; }
+                if (unsubscribeAuth) { unsubscribeAuth(); unsubscribeAuth = null; }
+                for (const existing of getApps()) {
+                    await deleteApp(existing);
+                }
+
+                const app = initializeApp(cfg);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                window.CloudBridge.signInEmail = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
+                window.CloudBridge.registerEmail = (email, pass) => createUserWithEmailAndPassword(auth, email, pass);
+                window.CloudBridge.signInGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
+                window.CloudBridge.signOutUser = () => signOut(auth);
+
+                unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+                    if (unsubscribeDoc) {
+                        unsubscribeDoc();
+                        unsubscribeDoc = null;
+                    }
+
+                    if (user) {
+                        window.CloudBridge.isConnected = true;
+                        window.CloudBridge.userEmail = user.email || 'Usuario conectado';
+                        if (typeof updateCloudUI === 'function') updateCloudUI();
+
+                        const userDocRef = doc(db, "users", user.uid, "appData", "studioState");
+                        window.CloudBridge.pushState = async (localData, manual = false) => {
+                            if (isApplyingRemote) return;
+                            try {
+                                await setDoc(userDocRef, localData, { merge: true });
+                                const lastSyncEl = document.getElementById('cloud-last-sync');
+                                if (lastSyncEl) {
+                                    lastSyncEl.textContent = `Última sincronización: ${new Date().toLocaleTimeString()}`;
+                                }
+                            } catch (e) {
+                                if (manual && typeof showToast === 'function') {
+                                    showToast('⚠️ Error al subir a Firebase. Revisa las reglas de Firestore.');
+                                }
+                            }
+                        };
+
+                        unsubscribeDoc = onSnapshot(userDocRef, (snap) => {
+                            if (snap.exists()) {
+                                const remoteData = snap.data();
+                                const localData = window.getLocalStateForCloud();
+                                if ((remoteData.updatedAt || 0) > (localData.updatedAt || 0)) {
+                                    isApplyingRemote = true;
+                                    window.applyRemoteState(remoteData);
+                                    isApplyingRemote = false;
+                                }
+                            } else {
+                                window.CloudBridge.pushState(window.getLocalStateForCloud());
+                            }
+                        });
+                    } else {
+                        window.CloudBridge.isConnected = false;
+                        window.CloudBridge.userEmail = '';
+                        if (typeof updateCloudUI === 'function') updateCloudUI();
+                    }
+                });
+            } catch (e) {}
+        };
+
+        let initialConfig = DEFAULT_FIREBASE_CONFIG;
         try {
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            let unsubscribeDoc = null;
-            let isApplyingRemote = false;
-
-            window.CloudBridge.signInEmail = (email, pass) => signInWithEmailAndPassword(auth, email, pass);
-            window.CloudBridge.registerEmail = (email, pass) => createUserWithEmailAndPassword(auth, email, pass);
-            window.CloudBridge.signInGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
-            window.CloudBridge.signOutUser = () => signOut(auth);
-
-            onAuthStateChanged(auth, (user) => {
-                if (unsubscribeDoc) {
-                    unsubscribeDoc();
-                    unsubscribeDoc = null;
-                }
-
-                if (user) {
-                    window.CloudBridge.isConnected = true;
-                    window.CloudBridge.userEmail = user.email || 'Usuario conectado';
-                    if (typeof updateCloudUI === 'function') updateCloudUI();
-
-                    const userDocRef = doc(db, "users", user.uid, "appData", "studioState");
-                    window.CloudBridge.pushState = async (localData, manual = false) => {
-                        if (isApplyingRemote) return;
-                        try {
-                            await setDoc(userDocRef, localData, { merge: true });
-                            const lastSyncEl = document.getElementById('cloud-last-sync');
-                            if (lastSyncEl) {
-                                lastSyncEl.textContent = `Última sincronización: ${new Date().toLocaleTimeString()}`;
-                            }
-                        } catch (e) {
-                            if (manual && typeof showToast === 'function') {
-                                showToast('⚠️ Error al subir a Firebase. Revisa las reglas de Firestore.');
-                            }
-                        }
-                    };
-
-                    unsubscribeDoc = onSnapshot(userDocRef, (snap) => {
-                        if (snap.exists()) {
-                            const remoteData = snap.data();
-                            const localData = window.getLocalStateForCloud();
-                            if ((remoteData.updatedAt || 0) > (localData.updatedAt || 0)) {
-                                isApplyingRemote = true;
-                                window.applyRemoteState(remoteData);
-                                isApplyingRemote = false;
-                            }
-                        } else {
-                            window.CloudBridge.pushState(window.getLocalStateForCloud());
-                        }
-                    });
-                } else {
-                    window.CloudBridge.isConnected = false;
-                    window.CloudBridge.userEmail = '';
-                    if (typeof updateCloudUI === 'function') updateCloudUI();
-                }
-            });
+            const savedCfgRaw = SafeStorage.get('tanycu_yt_firebase_cfg');
+            if (savedCfgRaw) {
+                const parsed = JSON.parse(savedCfgRaw);
+                if (parsed && parsed.apiKey) initialConfig = parsed;
+            }
         } catch (e) {}
+
+        window.initFirebaseAppWithConfig(initialConfig);
     </script>
 </body>
 </html>
