@@ -3,6 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#08090d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tanycu YT">
+    <link id="pwa-manifest-link" rel="manifest" href="">
+    <link id="pwa-apple-icon" rel="apple-touch-icon" href="">
+    <link id="pwa-favicon" rel="icon" type="image/png" href="">
     <title>Tanycu YT v0.1</title>
     <style>
         :root {
@@ -937,6 +945,12 @@
             </nav>
 
             <div class="header-actions">
+                <!-- Botón Instalar App (PWA) -->
+                <button id="btn-install-pwa" class="btn btn-cyan hidden" onclick="installPWA()" title="Instalar Tanycu YT en tu dispositivo">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>📲 Instalar App</span>
+                </button>
+
                 <!-- Botón Nube Firebase -->
                 <button id="btn-cloud-status" class="btn" onclick="openCloudModal()" title="Sincronización en tiempo real con Firebase">
                     <span id="cloud-dot" class="cloud-dot"></span>
@@ -1426,6 +1440,7 @@
             if (savedLogo) {
                 imgEl.src = savedLogo;
             }
+            setupPWAManifest(savedLogo || getDefaultTanycuLogoSVG());
         }
 
         function handleBrandLogoUpload(event) {
@@ -1445,6 +1460,7 @@
                     SafeStorage.set(BRAND_LOGO_KEY, dataUrl);
                     const imgEl = document.getElementById('brand-logo-img');
                     if (imgEl) imgEl.src = dataUrl;
+                    setupPWAManifest(dataUrl);
                     showToast('✅ Logo de Tanycu YT actualizado.');
                 };
                 img.src = e.target.result;
@@ -1454,37 +1470,139 @@
         }
 
         /* ==========================================================================
-           3. ESTADO INICIAL LIMPIO
+           2B. CONFIGURACIÓN PWA INSTALABLE (MANIFEST + ICONOS + SERVICE WORKER)
            ========================================================================== */
-        function createCleanState() {
-            return {
-                statuses: [
-                    { id: 'sin_empezar', name: 'Sin empezar', color: '#94a3b8', locked: true },
-                    { id: 'guion', name: 'En guion', color: '#f59e0b', locked: false },
-                    { id: 'grabando', name: 'Grabando', color: '#06b6d4', locked: false },
-                    { id: 'editando', name: 'Editando', color: '#8b5cf6', locked: false },
-                    { id: 'programado', name: 'Programado', color: '#ec4899', locked: false },
-                    { id: 'publicado', name: 'Publicado', color: '#10b981', locked: true }
-                ],
-                mangas: [],
-                notifications: [],
-                autoPublish: false,
-                notifiedDueIds: [],
-                updatedAt: Date.now()
-            };
+        let deferredInstallPrompt = null;
+
+        function generatePWAIconPNG(sourceUrl, size) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = size;
+                        canvas.height = size;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#08090d';
+                        ctx.fillRect(0, 0, size, size);
+                        ctx.drawImage(img, 0, 0, size, size);
+                        resolve(canvas.toDataURL('image/png'));
+                    } catch (e) {
+                        resolve(sourceUrl);
+                    }
+                };
+                img.onerror = () => resolve(sourceUrl);
+                img.src = sourceUrl;
+            });
         }
 
-        let state = loadLocalState();
-        let currentView = 'dashboard';
-        let currentFormat = 'long'; // 'long' | 'short'
-        let dashboardFilter = 'all'; // 'all' | 'long' | 'short'
-        let selectedMangaId = null;
-        let currentBannerData = '';
-        let authMode = 'login';
-        window.CloudBridge = window.CloudBridge || { ready: false, user: null };
+        async function setupPWAManifest(logoSrc) {
+            try {
+                const icon192 = await generatePWAIconPNG(logoSrc, 192);
+                const icon512 = await generatePWAIconPNG(logoSrc, 512);
+
+                const faviconEl = document.getElementById('pwa-favicon');
+                const appleIconEl = document.getElementById('pwa-apple-icon');
+                if (faviconEl) faviconEl.href = icon192;
+                if (appleIconEl) appleIconEl.href = icon192;
+
+                const manifestObj = {
+                    name: 'Tanycu YT — Gestión de Resúmenes',
+                    short_name: 'Tanycu YT',
+                    description: 'Control de producción y publicación de videos largos y Shorts de manga.',
+                    start_url: window.location.href,
+                    scope: './',
+                    display: 'standalone',
+                    orientation: 'any',
+                    background_color: '#08090d',
+                    theme_color: '#08090d',
+                    icons: [
+                        { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+                        { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+                    ]
+                };
+
+                const manifestBlob = new Blob([JSON.stringify(manifestObj)], { type: 'application/manifest+json' });
+                const manifestUrl = URL.createObjectURL(manifestBlob);
+                const linkEl = document.getElementById('pwa-manifest-link');
+                if (linkEl) linkEl.href = manifestUrl;
+            } catch (e) {}
+        }
+
+        function registerPWAServiceWorker() {
+            try {
+                if (!('serviceWorker' in navigator)) return;
+                const swCode = `
+                    const CACHE_NAME = 'tanycu-yt-v01';
+                    self.addEventListener('install', (e) => {
+                        self.skipWaiting();
+                    });
+                    self.addEventListener('activate', (e) => {
+                        e.waitUntil(self.clients.claim());
+                    });
+                    self.addEventListener('fetch', (e) => {
+                        if (e.request.method !== 'GET') return;
+                        e.respondWith(
+                            fetch(e.request)
+                                .then((res) => {
+                                    const clone = res.clone();
+                                    caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone)).catch(() => {});
+                                    return res;
+                                })
+                                .catch(() => caches.match(e.request))
+                        );
+                    });
+                `;
+                const swBlob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(swBlob);
+                navigator.serviceWorker.register(swUrl).catch(() => {});
+            } catch (e) {}
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e;
+            const installBtn = document.getElementById('btn-install-pwa');
+            if (installBtn) installBtn.classList.remove('hidden');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            const installBtn = document.getElementById('btn-install-pwa');
+            if (installBtn) installBtn.classList.add('hidden');
+            showToast('📲 ¡Tanycu YT instalada correctamente en tu dispositivo!');
+        });
+
+        async function installPWA() {
+            if (!deferredInstallPrompt) {
+                showToast('En Safari/iOS pulsa Compartir → "Añadir a pantalla de inicio". En Chrome/Edge usa el icono de instalar en la barra de direcciones.');
+                return;
+            }
+            deferredInstallPrompt.prompt();
+            const choice = await deferredInstallPrompt.userChoice;
+            if (choice && choice.outcome === 'accepted') {
+                deferredInstallPrompt = null;
+                const installBtn = document.getElementById('btn-install-pwa');
+                if (installBtn) installBtn.classList.add('hidden');
+            }
+        }
+
+        /* ==========================================================================
+           3. ESTADO INICIAL, NORMALIZACIÓN Y PERSISTENCIA
+           ========================================================================== */
+        const DEFAULT_STATUSES = [
+            { id: 'sin_empezar', name: 'Sin empezar', color: '#94a3b8', locked: true },
+            { id: 'guion', name: 'Guion', color: '#a855f7', locked: false },
+            { id: 'grabando', name: 'Grabando', color: '#06b6d4', locked: false },
+            { id: 'editando', name: 'Editando', color: '#f59e0b', locked: false },
+            { id: 'programado', name: 'Programado', color: '#3b82f6', locked: false },
+            { id: 'publicado', name: 'Publicado', color: '#10b981', locked: true }
+        ];
 
         function normalizeMangasList(mangas) {
-            return (mangas || []).map(m => ({
+            if (!Array.isArray(mangas)) return [];
+            return mangas.map(m => ({
                 ...m,
                 episodes: Array.isArray(m.episodes) ? m.episodes : [],
                 shortEpisodes: Array.isArray(m.shortEpisodes) ? m.shortEpisodes : []
@@ -1501,14 +1619,14 @@
             return manga.episodes;
         }
 
-        function loadLocalState() {
-            const raw = SafeStorage.get(STORAGE_KEY) || SafeStorage.get('mangatube_studio_v22') || SafeStorage.get('mangatube_studio_clean_v1');
+        function loadState() {
+            const raw = SafeStorage.get(STORAGE_KEY);
             if (raw) {
                 try {
                     const parsed = JSON.parse(raw);
                     if (parsed && Array.isArray(parsed.mangas) && Array.isArray(parsed.statuses)) {
                         return {
-                            statuses: parsed.statuses,
+                            statuses: parsed.statuses.length ? parsed.statuses : JSON.parse(JSON.stringify(DEFAULT_STATUSES)),
                             mangas: normalizeMangasList(parsed.mangas),
                             notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
                             autoPublish: Boolean(parsed.autoPublish),
@@ -1518,10 +1636,33 @@
                     }
                 } catch (e) {}
             }
-            const clean = createCleanState();
-            SafeStorage.set(STORAGE_KEY, JSON.stringify(clean));
-            return clean;
+            return {
+                statuses: JSON.parse(JSON.stringify(DEFAULT_STATUSES)),
+                mangas: [],
+                notifications: [],
+                autoPublish: true,
+                notifiedDueIds: [],
+                updatedAt: Date.now()
+            };
         }
+
+        let state = loadState();
+        let currentView = 'dashboard';
+        let currentFormat = 'long';
+        let dashboardFilter = 'all';
+        let selectedMangaId = null;
+        let currentBannerData = '';
+        let authMode = 'login';
+
+        window.CloudBridge = window.CloudBridge || {
+            ready: false,
+            user: null,
+            loginEmail: null,
+            registerEmail: null,
+            loginGoogle: null,
+            logout: null,
+            pushState: null
+        };
 
         function saveState(skipCloud = false) {
             state.updatedAt = Date.now();
@@ -2623,7 +2764,7 @@
                         if (isNaN(pubDate.getTime())) return;
 
                         if (pubDate <= now) {
-                            if (isScheduledStatus(ep.statusId) || state.autoPublish) {
+                            if (isScheduledStatus(ep.statusId)) {
                                 ep.statusId = 'publicado';
                                 if (!ep.startDate) ep.startDate = getNowDateTimeLocal();
                                 if (!ep.endDate) ep.endDate = getNowDateTimeLocal();
@@ -2634,13 +2775,13 @@
                                 const epLabel = formatEpisodeLabel(ep.number, fmt);
                                 const fmtTag = fmt === 'short' ? '⚡ Short' : '📺 Video Largo';
                                 pushNotification({
-                                    title: `⏰ Hora de estreno (${fmtTag}) — ${manga.name}`,
-                                    message: `El ${epLabel} ha alcanzado su fecha de publicación.`,
+                                    title: `⏰ Episodio retrasado (${fmtTag}) — ${manga.name}`,
+                                    message: `El ${epLabel} ha pasado su fecha prevista y sigue pendiente en "${getStatusObj(ep.statusId).name}".`,
                                     mangaId: manga.id,
                                     episodeId: ep.id,
                                     format: fmt
                                 });
-                                showToast(`⏰ Hora de publicar: ${manga.name} (${epLabel})`);
+                                showToast(`⏰ Retrasado: ${manga.name} (${epLabel})`);
                                 changed = true;
                             }
                         }
@@ -2972,6 +3113,7 @@
 
         function initApp() {
             initBrandLogo();
+            registerPWAServiceWorker();
             renderNotifications();
             updateNotifControlsUI();
             renderDashboard();
